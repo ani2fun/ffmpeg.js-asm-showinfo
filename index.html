@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+        <meta charset="utf-8" name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    </head>
+
+    <body>
+
+            <section class="experiment">
+                <h2 class="header">Logs</h2>
+                <ol id="logs-preview"></ol>
+            </section>
+
+            <script>
+
+                var worker;
+
+                var workerPath = 'https://archive.org/download/ffmpeg_asm/ffmpeg_asm.js';
+                if(document.domain == 'localhost') {
+                    workerPath = location.href.replace(location.href.split('/').pop(), '') + 'ffmpeg_asm.js';
+                }
+
+                function processInWebWorker() {
+                    var blob = URL.createObjectURL(new Blob(['importScripts("' + workerPath + '");var now = Date.now;function print(text) {postMessage({"type" : "stdout","data" : text});};onmessage = function(event) {var message = event.data;if (message.type === "command") {var Module = {print: print,printErr: print,files: message.files || [],arguments: message.arguments || [],TOTAL_MEMORY: message.TOTAL_MEMORY || false};postMessage({"type" : "start","data" : Module.arguments.join(" ")});postMessage({"type" : "stdout","data" : "Received command: " +Module.arguments.join(" ") +((Module.TOTAL_MEMORY) ? ".  Processing with " + Module.TOTAL_MEMORY + " bits." : "")});var time = now();var result = ffmpeg_run(Module);var totalTime = now() - time;postMessage({"type" : "stdout","data" : "Finished processing (took " + totalTime + "ms)"});postMessage({"type" : "done","data" : result,"time" : totalTime});}};postMessage({"type" : "ready"});'], {
+                        type: 'application/javascript'
+                    }));
+
+                    var worker = new Worker(blob);
+                    URL.revokeObjectURL(blob);
+                    return worker;
+                }
+
+                function convertStreams() {
+                    if (!worker) {
+                        worker = processInWebWorker();
+                    }
+                    worker.onmessage = function(event) {
+                        var message = event.data;
+                        if (message.type == "ready") {
+                            log('<a href="'+ workerPath +'" download="ffmpeg-asm.js">ffmpeg-asm.js</a> file has been loaded.');
+                              fetch('SampleVideo.mp4')
+                                  .then(res => res.arrayBuffer())
+                                  .then(buff =>
+                                          worker.postMessage({
+                                              type: 'command',
+                                              arguments: '-i video.mp4 -vf showinfo -f null -'.split(' '),
+                                              files: [
+                                                  {
+                                                      data: new Uint8Array(buff),
+                                                      name: 'video.mp4'
+                                                  }
+                                              ]
+                                          })
+                                      );
+                        } else if (message.type == "stdout") {
+                            log(message.data);
+                        } else if (message.type == "start") {
+                            log('<a href="'+ workerPath +'" download="ffmpeg-asm.js">ffmpeg-asm.js</a> file received ffmpeg command.');
+                        } else if (message.type == "done") {
+                          log('message.type : ' + message.type);
+                        }
+                    };
+                }
+
+                convertStreams();
+
+                var logsPreview = document.getElementById('logs-preview');
+                function log(message) {
+                    var li = document.createElement('li');
+                    li.innerHTML = message;
+                    logsPreview.appendChild(li);
+
+                    li.tabIndex = 0;
+                    li.focus();
+                }
+            </script>
+            
+    </body>
+</html>
